@@ -52,8 +52,15 @@ if "favorites" not in st.session_state:
     st.session_state["favorites"] = []
 if "shopping_list" not in st.session_state:
     st.session_state["shopping_list"] = []
-if "meal_plan" not in st.session_state:
-    st.session_state["meal_plan"] = {day: [] for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+
+# Structured 3 Meals Per Day (Breakfast, Lunch, Dinner)
+days_list = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+if "meal_plan" not in st.session_state or not isinstance(list(st.session_state["meal_plan"].values())[0], dict):
+    st.session_state["meal_plan"] = {
+        day: {"Breakfast": [], "Lunch": [], "Dinner": []}
+        for day in days_list
+    }
+
 if "cost_history" not in st.session_state:
     st.session_state["cost_history"] = [
         {"date": (datetime.date.today() - datetime.timedelta(days=6)).isoformat(), "cost": 520},
@@ -66,7 +73,7 @@ if "unlocked_badges" not in st.session_state:
     st.session_state["unlocked_badges"] = set(["🌱 Kitchen Novice"])
 if "ai_chat_history" not in st.session_state:
     st.session_state["ai_chat_history"] = [
-        {"role": "assistant", "content": "👋 **Welcome Chef!** I'm your AI Culinary Copilot. Ask me about substitutions, recipes, wine pairings, or leftover ideas!"}
+        {"role": "assistant", "content": "👋 **Welcome Chef!** I'm your AI Culinary Copilot. Ask me about substitutions, 3-meal plans, wine pairings, or leftover ideas!"}
     ]
 if "kitchen_step_index" not in st.session_state:
     st.session_state["kitchen_step_index"] = 0
@@ -123,6 +130,16 @@ if dark_mode:
             display: inline-block;
             margin-right: 6px;
         }
+        .meal-slot-header {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background-color: #334155;
+            color: #F59E0B;
+            margin-top: 8px;
+            margin-bottom: 4px;
+        }
         </style>
     """, unsafe_allow_html=True)
 else:
@@ -164,6 +181,17 @@ else:
             font-weight: 700;
             display: inline-block;
             margin-right: 6px;
+        }
+        .meal-slot-header {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background-color: #FFEDD5;
+            color: #C2410C;
+            border: 1px solid #FDBA74;
+            margin-top: 8px;
+            margin-bottom: 4px;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -221,7 +249,7 @@ st.markdown(f"""
     <div class="hero-header">
         <h1 style="margin: 0; font-size: 32px; color: {'#F59E0B' if dark_mode else '#C2410C'};">🍳 {time_greeting}, Chef!</h1>
         <p style="margin-top: 6px; font-size: 16px; font-weight: 500; opacity: 0.95;">
-            Welcome to your intelligent culinary workspace with {len(recipes)}+ recipes. Plan meals, track grocery costs, and cook step-by-step.
+            Welcome to your intelligent culinary workspace with {len(recipes)}+ recipes. Plan 3 meals a day, track grocery costs, and cook step-by-step.
         </p>
     </div>
 """, unsafe_allow_html=True)
@@ -241,8 +269,12 @@ m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 m_col1.metric("📖 Total Recipes", len(recipes))
 m_col2.metric("❤️ Favorites", len(st.session_state["favorites"]))
 m_col3.metric("🛒 Cart Items", len(st.session_state["shopping_list"]))
-planned_count = sum(len(dishes) for dishes in st.session_state["meal_plan"].values())
-m_col4.metric("📅 Planned Meals", planned_count)
+
+total_planned_meals = sum(
+    len(slots["Breakfast"]) + len(slots["Lunch"]) + len(slots["Dinner"])
+    for slots in st.session_state["meal_plan"].values()
+)
+m_col4.metric("📅 Planned Meals", total_planned_meals)
 m_col5.metric("🏆 Badges", len(st.session_state["unlocked_badges"]))
 m_col6.metric("🔥 Cook Streak", f"{len(st.session_state['prepared_recipes'])} Days")
 
@@ -310,7 +342,7 @@ st.markdown("---")
 # --- Navigation Tabs ---
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🍽️ Recipe Gallery",
-    "📅 Meal Planner",
+    "📅 3-Meal Planner",
     "🛒 Shopping List & Prices",
     "🤖 AI Chef Copilot",
     "📱 Hands-Free Kitchen View",
@@ -467,72 +499,103 @@ with tab1:
                 st.rerun()
 
 # ==========================================
-# TAB 2: WEEKLY MEAL PLANNER
+# TAB 2: WEEKLY MEAL PLANNER (3 MEALS PER DAY)
 # ==========================================
 with tab2:
-    st.header("📅 Interactive Weekly Meal Planner")
-    st.caption(f"Schedule your weekly meals. Full {len(recipes)} recipe dataset is available for planning!")
+    st.header("📅 Weekly 3-Meal Planner (Breakfast, Lunch & Dinner)")
+    st.caption(f"Plan your 3 daily meals for the week. Complete {len(recipes)} recipe database is accessible!")
 
-    p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
+    p_col1, p_col2, p_col3, p_col4 = st.columns([1, 1, 2, 1])
     with p_col1:
-        selected_day = st.selectbox("Select Day of the Week", list(st.session_state["meal_plan"].keys()), key="mp_day_select")
+        selected_day = st.selectbox("Select Day", days_list, key="mp_day_select")
     with p_col2:
+        selected_slot = st.selectbox("Meal Time Slot", ["Breakfast", "Lunch", "Dinner"], key="mp_slot_select")
+    with p_col3:
         all_recipe_names = sorted(recipes["name"].dropna().unique().tolist()) if not recipes.empty else []
         planner_recipe = st.selectbox("Pick Any Recipe from Dataset", all_recipe_names, key="mp_recipe_select")
-    with p_col3:
+    with p_col4:
         st.write(" ")
         st.write(" ")
-        if st.button("➕ Add to Plan", key="mp_btn_add"):
-            if planner_recipe and planner_recipe not in st.session_state["meal_plan"][selected_day]:
-                st.session_state["meal_plan"][selected_day].append(planner_recipe)
-                st.success(f"Added {planner_recipe} to {selected_day}!")
+        if st.button("➕ Add Meal", key="mp_btn_add"):
+            if planner_recipe and planner_recipe not in st.session_state["meal_plan"][selected_day][selected_slot]:
+                st.session_state["meal_plan"][selected_day][selected_slot].append(planner_recipe)
+                st.success(f"Added '{planner_recipe}' to {selected_day} {selected_slot}!")
                 st.rerun()
 
-    # Magic Auto-Plan Button
-    if st.button("🎲 Auto-Generate Balanced Weekly Plan", key="mp_btn_autoplan"):
+    # Magic Auto-Plan Button for 3 Meals/Day
+    if st.button("🎲 Auto-Generate Balanced 3-Meal Weekly Plan", key="mp_btn_autoplan"):
         if not recipes.empty:
-            for day in st.session_state["meal_plan"].keys():
-                st.session_state["meal_plan"][day] = list(recipes.sample(min(2, len(recipes)))["name"])
-            st.success("Magic Weekly Meal Plan Generated!")
+            b_recipes = recipes[recipes["category"].str.lower() == "breakfast"]
+            l_d_recipes = recipes[recipes["category"].str.lower() != "breakfast"]
+
+            for day in days_list:
+                # Sample Breakfast
+                b_pick = list(b_recipes.sample(1)["name"]) if not b_recipes.empty else list(recipes.sample(1)["name"])
+                # Sample Lunch & Dinner
+                ld_picks = list(l_d_recipes.sample(2)["name"]) if len(l_d_recipes) >= 2 else list(recipes.sample(2)["name"])
+                
+                st.session_state["meal_plan"][day] = {
+                    "Breakfast": b_pick,
+                    "Lunch": [ld_picks[0]],
+                    "Dinner": [ld_picks[1]]
+                }
+            st.success("Magic 3-Meal Weekly Schedule Generated!")
             st.rerun()
 
     st.markdown("---")
-    st.subheader("🗓️ Your Weekly Schedule")
+    st.subheader("🗓️ Your 7-Day 3-Meal Schedule")
 
     day_cols = st.columns(7)
-    for idx, (day, dishes) in enumerate(st.session_state["meal_plan"].items()):
+    slot_icons = {"Breakfast": "🌅", "Lunch": "☀️", "Dinner": "🌙"}
+
+    for idx, day in enumerate(days_list):
         with day_cols[idx]:
             st.markdown(f"### **{day}**")
-            if dishes:
-                for d_idx, dish in enumerate(dishes):
-                    st.info(f"🍲 {dish}")
-                    if st.button("❌", key=f"del_mp_{day}_{d_idx}_{dish}"):
-                        st.session_state["meal_plan"][day].remove(dish)
-                        st.rerun()
-            else:
-                st.caption("No meals scheduled")
+            day_slots = st.session_state["meal_plan"][day]
+            
+            for slot_name in ["Breakfast", "Lunch", "Dinner"]:
+                st.markdown(f"<div class='meal-slot-header'>{slot_icons[slot_name]} {slot_name}</div>", unsafe_allow_html=True)
+                dishes_in_slot = day_slots[slot_name]
+                if dishes_in_slot:
+                    for d_idx, dish in enumerate(dishes_in_slot):
+                        st.info(f"{dish}")
+                        if st.button("❌", key=f"del_mp_{day}_{slot_name}_{d_idx}_{dish}"):
+                            st.session_state["meal_plan"][day][slot_name].remove(dish)
+                            st.rerun()
+                else:
+                    st.caption("No dish planned")
 
     st.markdown("---")
-    st.subheader("📊 Daily Nutrition Totals & Target Breakdown")
+    st.subheader("📊 3-Meal Daily Macro Breakdown vs Target Goals")
 
     nutrition_data = []
-    for day, dishes in st.session_state["meal_plan"].items():
+    for day in days_list:
         day_cal, day_prot, day_carbs, day_fat = 0, 0, 0, 0
-        for dish in dishes:
-            match = recipes[recipes["name"].str.strip().str.lower() == dish.strip().lower()]
-            if not match.empty:
-                r_row = match.iloc[0]
-                day_cal += parse_numeric(r_row.get("calories", 0), "cal")
-                day_prot += parse_numeric(r_row.get("protein", 0), "g")
-                day_carbs += parse_numeric(r_row.get("carbs", 0), "g")
-                day_fat += parse_numeric(r_row.get("fat", 0), "g")
-        nutrition_data.append({"Day": day, "Calories (kcal)": day_cal, "Protein (g)": day_prot, "Carbs (g)": day_carbs, "Fat (g)": day_fat})
+        day_slots = st.session_state["meal_plan"][day]
+        
+        for slot_name in ["Breakfast", "Lunch", "Dinner"]:
+            for dish in day_slots[slot_name]:
+                match = recipes[recipes["name"].str.strip().str.lower() == dish.strip().lower()]
+                if not match.empty:
+                    r_row = match.iloc[0]
+                    day_cal += parse_numeric(r_row.get("calories", 0), "cal")
+                    day_prot += parse_numeric(r_row.get("protein", 0), "g")
+                    day_carbs += parse_numeric(r_row.get("carbs", 0), "g")
+                    day_fat += parse_numeric(r_row.get("fat", 0), "g")
+        
+        nutrition_data.append({
+            "Day": day,
+            "Daily Calories (kcal)": day_cal,
+            "Protein (g)": day_prot,
+            "Carbs (g)": day_carbs,
+            "Fat (g)": day_fat
+        })
 
     nut_df = pd.DataFrame(nutrition_data)
     
     nut_c1, nut_c2 = st.columns([2, 1])
     with nut_c1:
-        st.bar_chart(nut_df.set_index("Day")[["Calories (kcal)"]])
+        st.bar_chart(nut_df.set_index("Day")[["Daily Calories (kcal)"]])
     with nut_c2:
         st.dataframe(nut_df, use_container_width=True)
 
